@@ -1,0 +1,6 @@
+streamlit>=1.37
+reportlab>=4.0
+pandas>=2.0
+pydeck>=0.9
+google-cloud-firestore>=2.16
+google-auth>=2.23
