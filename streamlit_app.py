@@ -17,7 +17,6 @@ from reportlab.lib.pagesizes import A4, landscape
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.lib.utils import ImageReader
 
 # Paths
 APP_DIR = Path(__file__).parent
@@ -279,8 +278,6 @@ def load_airport_coords(json_path: Path) -> Dict[str, Tuple[float, float]]:
 # -------- PDF drawing (to bytes) ---------
 
 _SYMBOL_FONT_NAME: str | None = None
-_PLANE_IMG: ImageReader | None = None
-_PLANE_IMG_PATH: Path | None = None
 
 
 def _get_symbol_font() -> str | None:
@@ -288,10 +285,15 @@ def _get_symbol_font() -> str | None:
     if _SYMBOL_FONT_NAME:
         return _SYMBOL_FONT_NAME
     candidates = [
-        # Path(r"/usr/share/fonts/truetype/seguisym.ttf")
-        Path(r"C:/Windows/Fonts/seguisym.ttf")
-        # Path(r"C:/Windows/Fonts/seguiemj.ttf"),
-        # Path(r"C:/Windows/Fonts/arialuni.ttf"),
+        # Local project fonts only
+        APP_DIR / "NotoSansSymbols2-Regular.ttf",
+        APP_DIR / "Noto Sans Symbols 2 Regular.ttf",
+        APP_DIR / "Noto Sans Symbols 2.ttf",
+        APP_DIR / "seguisym.ttf",
+        APP_DIR / "fonts" / "NotoSansSymbols2-Regular.ttf",
+        APP_DIR / "fonts" / "Noto Sans Symbols 2 Regular.ttf",
+        APP_DIR / "fonts" / "Noto Sans Symbols 2.ttf",
+        APP_DIR / "fonts" / "seguisym.ttf",
     ]
     for p in candidates:
         try:
@@ -306,33 +308,6 @@ def _get_symbol_font() -> str | None:
                 pdfmetrics.registerFont(TTFont(fname, str(p)))
                 _SYMBOL_FONT_NAME = fname
                 return _SYMBOL_FONT_NAME
-        except Exception:
-            continue
-    return None
-
-
-def _get_plane_image() -> ImageReader | None:
-    """Busca una imagen .tif/.tiff en el directorio de la app y la carga.
-
-    Si falla o no existe, devuelve None y se usará el fallback de fuente/vectores.
-    """
-    global _PLANE_IMG, _PLANE_IMG_PATH
-    if _PLANE_IMG is not None:
-        return _PLANE_IMG
-    # Buscar archivos .tif/.tiff (insensible a mayúsculas)
-    candidates = list(APP_DIR.glob("*.tif")) + list(APP_DIR.glob("*.tiff"))
-    if not candidates:
-        # Intentar también nombres comunes con distintas mayúsculas
-        candidates = [
-            p for p in APP_DIR.iterdir()
-            if p.is_file() and p.suffix.lower() in {".tif", ".tiff"}
-        ]
-    for p in candidates:
-        try:
-            img = ImageReader(str(p))
-            _PLANE_IMG = img
-            _PLANE_IMG_PATH = p
-            return _PLANE_IMG
         except Exception:
             continue
     return None
@@ -379,47 +354,20 @@ def draw_month_calendar_pdf_bytes(
 
     # Plane icon
     def draw_plane_icon(cx: float, cy: float, size: float = 8.0, orient: str = "right") -> None:
-        # 1) Intentar usar imagen .tif/.tiff si está presente
-        try:
-            img = _get_plane_image()
-        except Exception:
-            img = None
-        if img is not None:
-            # Escalar a un tamaño razonable en puntos
-            w = h = max(8.0, size * 1.6)
-            # Dibujar centrado en (cx, cy)
-            c.drawImage(img, cx - w / 2.0, cy - h / 2.0, width=w, height=h, preserveAspectRatio=True, mask='auto')
-            return
-
-        # 2) Fallback: fuente con glifo ✈ (si disponible)
         font_name = _get_symbol_font()
-        if font_name:
-            c.saveState()
-            c.setFillColor(colors.red)
-            emoji = "✈"
-            font_size = max(8, int(size * 1.6))
-            c.setFont(font_name, font_size)
-            text_w = c.stringWidth(emoji, font_name, font_size)
-            c.drawString(cx - text_w / 2, cy - font_size * 0.6, emoji)
-            c.restoreState()
+        if not font_name:
+            # No fallback: si no hay fuente, no dibuja icono
             return
-
-        # 3) Último recurso: dibujo vectorial mínimo
-        c.setStrokeColor(colors.red)
-        c.setLineWidth(1)
-        if orient == "right":
-            c.line(cx - size * 0.4, cy, cx + size * 0.6, cy)
-            c.line(cx - size * 0.1, cy, cx - size * 0.4, cy + size * 0.25)
-            c.line(cx - size * 0.1, cy, cx - size * 0.4, cy - size * 0.25)
-            c.line(cx - size * 0.45, cy, cx - size * 0.55, cy + size * 0.18)
-            c.line(cx - size * 0.45, cy, cx - size * 0.55, cy - size * 0.18)
-        else:
-            c.line(cx, cy + size * 0.6, cx, cy - size * 0.4)
-            c.line(cx, cy - size * 0.1, cx + size * 0.25, cy - size * 0.4)
-            c.line(cx, cy - size * 0.1, cx - size * 0.25, cy - size * 0.4)
-            c.line(cx, cy - size * 0.45, cx + size * 0.18, cy - size * 0.55)
-            c.line(cx, cy - size * 0.45, cx - size * 0.18, cy - size * 0.55)
-        c.setStrokeColor(colors.black)
+        c.saveState()
+        c.setFillColor(colors.red)
+        # U+1F6EA NORTHEAST-POINTING AIRPLANE
+        emoji = "🛪"
+        font_size = max(8, int(size * 1.6))
+        c.setFont(font_name, font_size)
+        text_w = c.stringWidth(emoji, font_name, font_size)
+        c.drawString(cx - text_w / 2, cy - font_size * 0.6, emoji)
+        c.restoreState()
+        return
 
     # Cells
     top_y = page_h - margin - 18
