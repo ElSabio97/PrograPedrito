@@ -602,6 +602,56 @@ def main() -> None:
                 last_start_only[day] = best_start_only
         return last_end_map, last_start_only
 
+    def _total_minutes_from_by_day(by_day_local: Dict[int, List[str]]) -> int:
+        """Calcula minutos totales de vuelo a partir de las líneas por día.
+
+        Suma:
+        - Vuelos de un solo día: (hh:mm - hh:mm)
+        - Vuelos cruzando medianoche: empareja salidas "ORIG (hh:mm-" del día D con cierres "DEST - hh:mm)" del día D+1.
+        Asumimos emparejamiento en orden temporal (greedy). Eventos sin pareja se ignoran.
+        """
+        import re
+        regex_full = re.compile(r"^\s*[A-Z]{3}\s*-\s*[A-Z]{3}\s*\(\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*\)\s*$")
+        regex_startonly = re.compile(r"^\s*[A-Z]{3}\s*\(\s*(\d{1,2}):(\d{2})\s*-\s*$")
+        regex_endonly = re.compile(r"^\s*[A-Z]{3}\s*-\s*(\d{1,2}):(\d{2})\)\s*$")
+
+        def to_min(h: int, m: int) -> int:
+            return h * 60 + m
+
+        total = 0
+        starts_by_day: Dict[int, List[int]] = {}
+        ends_by_day: Dict[int, List[int]] = {}
+
+        for day, lines in by_day_local.items():
+            for line in lines:
+                m_full = regex_full.match(line)
+                if m_full:
+                    sh, sm, eh, em = map(int, (m_full.group(1), m_full.group(2), m_full.group(3), m_full.group(4)))
+                    total += max(0, to_min(eh, em) - to_min(sh, sm))
+                    continue
+                m_s = regex_startonly.match(line)
+                if m_s:
+                    sh, sm = int(m_s.group(1)), int(m_s.group(2))
+                    starts_by_day.setdefault(day, []).append(to_min(sh, sm))
+                    continue
+                m_e = regex_endonly.match(line)
+                if m_e:
+                    eh, em = int(m_e.group(1)), int(m_e.group(2))
+                    ends_by_day.setdefault(day, []).append(to_min(eh, em))
+
+        # Emparejar salidas del día D con cierres del día D+1
+        for day in sorted(starts_by_day.keys()):
+            next_day = day + 1
+            if next_day not in ends_by_day:
+                continue
+            s_list = sorted(starts_by_day[day])
+            e_list = sorted(ends_by_day[next_day])
+            for sh_min, eh_min in zip(s_list, e_list):
+                overnight = (24 * 60 - sh_min) + eh_min
+                if overnight > 0:
+                    total += overnight
+        return total
+
     stats_loaded = False
     try:
         from google.cloud import firestore  # type: ignore
@@ -692,10 +742,15 @@ def main() -> None:
 
                 # 2) Estadísticas opcionales
                 if show_stats:
-                    c1, c2, c3 = st.columns(3)
+                    # Calcular minutos totales (sumando vuelos de un día y emparejando cruces de medianoche)
+                    total_min = _total_minutes_from_by_day(by_day_local)
+                    total_h = total_min // 60
+                    rem_m = total_min % 60
+                    c1, c2, c3, c4 = st.columns(4)
                     c1.metric("Vuelos (legs)", f"{legs_count}")
                     c2.metric("Días con vuelo", f"{len(by_day_local)}")
                     c3.metric("Destinos únicos", f"{len(set(dest_counter_s.keys()))}")
+                    c4.metric("Horas de vuelo", f"{total_h} h {rem_m:02d} m")
 
                     if dest_counter_s:
                         import pandas as pd
@@ -871,10 +926,25 @@ def main() -> None:
                 dest_counter[parts.dest] += 1
                 route_set.add((parts.origin, parts.dest))
 
-            col1, col2, col3 = st.columns(3)
+            # Calcular horas totales de vuelo del mes (considerando medianoche)
+            def _to_min(hhmm: str) -> int:
+                h, m = _hhmm_to_tuple(hhmm)
+                return h * 60 + m
+            total_min_csv = 0
+            for r in month_rows:
+                s = _to_min(r.start_time)
+                e = _to_min(r.end_time)
+                if r.end_date == r.start_date:
+                    total_min_csv += max(0, e - s)
+                else:
+                    total_min_csv += (24 * 60 - s) + e
+            th, tm = divmod(total_min_csv, 60)
+
+            col1, col2, col3, col4 = st.columns(4)
             col1.metric("Vuelos (legs)", f"{len(month_rows)}")
             col2.metric("Días con vuelo", f"{len(by_day)}")
             col3.metric("Destinos únicos", f"{len(set(dest_counter.keys()))}")
+            col4.metric("Horas de vuelo", f"{th} h {tm:02d} m")
 
             if dest_counter:
                 st.subheader("Top destinos del mes")
