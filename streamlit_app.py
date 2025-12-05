@@ -109,8 +109,6 @@ def read_ib_flights_from_csv_bytes(data: bytes) -> List[FlightRow]:
             rows: List[FlightRow] = []
             for rec in reader:
                 subject = (rec.get(f_asunto) or "").strip()
-                if "IB" not in subject.upper():
-                    continue
                 if not _extract_route_from_subject(subject):
                     continue
                 try:
@@ -140,7 +138,7 @@ def _hhmm_to_tuple(hhmm: str) -> Tuple[int, int]:
 
 def build_calendar_lines(rows: List[FlightRow]) -> Tuple[int, int, Dict[int, List[str]], set[str], set[int]]:
     if not rows:
-        raise ValueError("No se encontraron vuelos IB en el CSV.")
+        raise ValueError("No se encontraron vuelos en el CSV.")
 
     year = rows[0].start_date.year
     month = rows[0].start_date.month
