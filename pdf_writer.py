@@ -120,7 +120,7 @@ def draw_month_calendar_pdf_bytes(
         font_size = max(8, int(size * 1.6))
         c.setFont(font_name, font_size)
         text_w = c.stringWidth(emoji, font_name, font_size)
-        c.drawString(cx - text_w / 2 + 2.5, cy - font_size * 0.6, emoji)
+        c.drawString(cx - text_w / 2, cy - font_size * 0.6, emoji)
         c.restoreState()
 
     # Draw calendar cells
